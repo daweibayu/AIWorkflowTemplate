@@ -1,0 +1,52 @@
+version: 1
+
+refs:
+  workflow: ".ai/AI_WORKFLOW.md(1a718465a25721713f624f801cf1b1884137934a)"
+
+roots:
+  sot: ".ai"
+  ep: ".ep"
+  code: "."
+
+layers:
+  - id: sot
+    dirs:
+      # 目标与计划（Intent 定义（长期）方向，不定义功能）
+      - ".ai/intent/" # 北极星文档 / milestone / roadmap 等，进度管理都在这里
+
+      # 需求与体验
+      - ".ai/prd/" # 产品需求文档（可从飞书单向同步）
+      - ".ai/ui/" # UI 设计文档
+
+      # 架构与决策
+      - ".ai/architecture/product/" # （架构）业务架构文档
+      - ".ai/architecture/tech/" # （架构）技术架构文档
+
+      # 规范（specs 是对人类工程行为的规范，rules 是对 AI 行为的约束）
+      - ".ai/specs/ui_ue/" # UI / UE 规范
+      - ".ai/specs/engineering/" # 代码 / 分支 / commit 等工程规范
+      - ".ai/ai_rules/" # 各种 rules（如 cursor rules 等）
+
+      # 模版
+      - ".ai/templates/" # 模块目录 / ADR / EP 等模版
+
+      ## 质量
+      - ".ai/quality/" # 验收标准与测试清单（DoD / 回归点 / 测试架构等）
+
+      # 契约（后续可细分）
+      - ".ai/contracts/" # 契约（API/数据模型/错误模型/事件埋点）
+
+      - ".ai/adr/" # ADR（关键取舍记录）
+
+      - ".ai/glossary/" # 词典
+
+      - ".ai/prompt/" # 可复用提示词素材（命名/品牌/视觉等）
+  - id: ep
+    dirs:
+  - id: code
+    dirs:
+
+todo:
+  - "层级版本系统（为 SoT 引入分层版本控制机制，使结构变更具备可追踪与可回溯能力）"
+  - "对象化文档模型（SoT 中的文件与内容抽象为可引用、可组合、可版本化的对象系统）"
+  - "SoT 形态演进（从文件系统形态演化为结构化存储（如数据库或图模型），以支持规模化与多 agent 协作）"
