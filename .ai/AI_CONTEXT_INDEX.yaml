@@ -25,7 +25,7 @@ layers:
       # 规范（specs 是对人类工程行为的规范，rules 是对 AI 行为的约束）
       - ".ai/specs/ui_ue/" # UI / UE 规范
       - ".ai/specs/engineering/" # 代码 / 分支 / commit 等工程规范
-      - ".ai/ai_rules/" # 各种 rules（如 cursor rules 等）
+      - ".ai/ai_rules/" # AI 行为约束规则（如 Cursor Rules 等）
 
       # 模版
       - ".ai/templates/" # 模块目录 / ADR / EP 等模版
