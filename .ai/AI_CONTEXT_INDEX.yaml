@@ -3,6 +3,7 @@ version: 1
 refs:
   workflow: ".ai/AI_WORKFLOW.md(1a718465a25721713f624f801cf1b1884137934a)"
 
+# 顶层只做路由，目录自治局部索引；不设跨目录依赖，容错优先于完整。
 roots:
   sot: ".ai"
   ep: ".ep"
