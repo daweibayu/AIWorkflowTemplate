@@ -1,0 +1,81 @@
+version: 1
+kind: ai_context
+
+scope: sot
+id: __WORKSPACE_ID__.sot
+scope_version: "1.0.0"
+
+refs:
+  workflow: "../../../.ai/AI_WORKFLOW.md(4c2cbffbd43277c365ed635bb350ed832fe450b8)"
+  workspace: "../../../.ai/AI_WORKSPACE.md"
+
+description: >
+  __WORKSPACE_NAME__ 的 SoT 初始结构；
+  正式业务真源通过自己的 `.ai` 暴露维护规则、内容边界与可加载能力。
+
+compatibility:
+  protocol: "^2.0.0"
+  scopes:
+    workspace: "^1.0.0"
+    repo: "^1.0.0"
+    module: "^1.0.0"
+
+resolver:
+  mode: recursive_index
+  recursive_discovery: true
+  hot_reload: true
+  ancestry_order: outer_to_inner
+
+objects:
+  workflow:
+    - id: "workflow.sot.source_of_truth"
+      kind: "workflow_doc"
+      path: "../../../.ai/AI_WORKFLOW.md"
+      version: "1.0.0"
+  templates:
+    - id: "template.sot.adr"
+      kind: "template_doc"
+      path: "../../../.ai/templates/ADR_TEMPLATE.md"
+      version: "1.0.0"
+  compose:
+    - id: "compose.sot_recursive"
+      kind: "compose_policy"
+      version: "1.0.0"
+      mode: "recursive_index"
+      precedence:
+        business_truth: self
+        external_rules: workspace
+
+ownership:
+  paths:
+    - "intent/**"
+    - "prd/**"
+    - "ui/**"
+    - "architecture/**"
+    - "contracts/**"
+    - "quality/**"
+    - "adr/**"
+    - "glossary/**"
+    - "prompt/**"
+    - "specs/ui_ue/**"
+
+context:
+  rule_refs: []
+  workflow_refs:
+    - "workflow.sot.source_of_truth"
+  template_refs:
+    - "template.sot.adr"
+  prompt_refs: []
+  compose_ref: "compose.sot_recursive"
+
+external_context:
+  workspace:
+    required: false
+    load: on_demand
+  repo:
+    required: false
+    load: on_demand_for_implementation
+
+notes:
+  - "该文件是 SoT 子仓库的初始 `.ai` 骨架"
+  - "该实例只负责暴露 SoT 的维护与加载边界，不承载 repo-local rules"

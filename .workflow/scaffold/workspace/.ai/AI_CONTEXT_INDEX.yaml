@@ -1,0 +1,302 @@
+version: 1
+kind: ai_context
+
+description: >
+  本文件是唯一的 AI 上下文定义入口，同时承担两种职责：
+  1. 定义 `.ai/` 的统一协议；
+  2. 描述当前仓库的 `.ai` 实例。
+
+todo:
+  - id: ai-versioning
+    title: "为 .ai 建立协议版本、作用域版本与兼容规则"
+    status: implemented
+    implementation:
+      - "protocol.version"
+      - "current.scope_version"
+      - "current.compatibility"
+      - "objects[*].version"
+  - id: ai-object-model
+    title: "为 .ai 中的 rules / workflow / templates / compose 定义可寻址对象模型"
+    status: implemented
+    implementation:
+      - "objects.rules"
+      - "objects.workflow"
+      - "objects.templates"
+      - "objects.compose"
+      - "current.context.*_refs"
+  - id: ai-dynamic-upgrade
+    title: "TODO: 未来可在递归 index 之上升级为 dynamic resolver。"
+    note: "按 task / ownership / capabilities 动态裁剪上下文，并给出写入目标。"
+
+definition:
+  ai_role: "为 AI 提供当前作用域下的本地执行约束与入口"
+  ai_is_not:
+    - "SoT"
+    - "代码目录"
+  ai_contains:
+    - "rules"
+    - "constraints"
+    - "workflow"
+    - "templates"
+  ai_excludes:
+    - "正式业务需求"
+    - "UI 规范正文"
+    - "架构正文"
+    - "契约正文"
+    - "验收正文"
+
+scopes:
+  workspace:
+    purpose: "定义跨 repo 组合、联调、校验方式"
+  sot:
+    purpose: "定义 SoT 的维护规则、模板与入口"
+  repo:
+    purpose: "定义当前 repo 的本地执行规则与入口"
+  module:
+    purpose: "定义 repo 内部模块、子域或子树的局部执行规则与入口"
+
+protocol:
+  version: "2.0.0"
+  entrypoint:
+    filename: "AI_CONTEXT_INDEX.yaml"
+    location: "<scope-root>/.ai/AI_CONTEXT_INDEX.yaml"
+    role: "discovery_and_recursive_composition"
+    note: "固定路径负责发现作用域；当前默认方案是递归加载与组合。"
+  resolver_model:
+    mode: "recursive_index"
+    recursive_discovery: true
+    hot_reload: true
+    cache_invalidation:
+      - ".ai/**"
+      - "AI_CONTEXT_INDEX.yaml"
+    resolution_order:
+      - "entrypoint_discovery"
+      - "ancestor_chain_outer_to_inner"
+      - "current_scope"
+      - "external_context_on_demand"
+      - "compose"
+  required_fields:
+    - name: version
+      type: integer
+      meaning: "文档格式版本"
+    - name: kind
+      type: string
+      meaning: "文档类型，当前固定为 ai_context"
+    - name: scope
+      type: string
+      allowed:
+        - workspace
+        - sot
+        - repo
+        - module
+      meaning: "当前 `.ai/` 所属作用域"
+    - name: id
+      type: string
+      meaning: "当前作用域唯一标识"
+    - name: scope_version
+      type: string
+      meaning: "当前作用域 `.ai` 的版本"
+    - name: compatibility
+      type: map
+      meaning: "当前作用域可兼容的协议版本与跨作用域版本范围"
+    - name: refs
+      type: map
+      meaning: "当前作用域引用的核心文档"
+    - name: resolver
+      type: map
+      meaning: "当前实例采用的上下文组合策略"
+    - name: context
+      type: map
+      meaning: "当前作用域实际启用的对象引用"
+    - name: external_context
+      type: map
+      meaning: "当前作用域依赖的外部作用域及加载方式"
+    - name: objects
+      type: map
+      meaning: "可寻址对象注册表"
+  optional_fields:
+    - name: capabilities
+      meaning: "当前作用域提供与依赖的能力声明；当前方案下作为补充元数据保留"
+    - name: ownership
+      meaning: "当前作用域拥有的路径、模块或符号边界；当前方案下作为补充元数据保留"
+    - name: selectors
+      meaning: "当前作用域适用的任务选择条件；留作后续升级使用"
+    - name: write_policy
+      meaning: "当前作用域的默认写入策略；留作后续升级使用"
+  compatibility_rules:
+    - "protocol.version 表示 AI_CONTEXT_INDEX 的协议版本"
+    - "scope_version 表示当前作用域 `.ai` 的版本"
+    - "compatibility.protocol 表示当前实例可接受的协议版本范围"
+    - "compatibility.scopes 表示当前实例可与哪些外部作用域版本组合"
+  context_fields:
+    rule_refs: "启用的规则对象引用"
+    workflow_refs: "启用的流程对象引用"
+    template_refs: "启用的模板对象引用"
+    prompt_refs: "启用的提示词对象引用"
+    compose_ref: "启用的组合策略对象引用"
+  compose_defaults:
+    id: "compose.recursive_index_default"
+    version: "1.0.0"
+    mode: "recursive_index"
+    recursive_discovery: true
+    ancestry_order: "outer_to_inner"
+    compose_order:
+      - "workspace"
+      - "ancestor_scopes"
+      - "current_scope"
+      - "external_context"
+    precedence:
+      outer_scope: "提供默认约束"
+      nearest_sot: "提供业务真源"
+      nearest_scope: "提供最局部执行约束"
+
+objects:
+  rules:
+    - id: "rules.ai.core_redlines"
+      kind: "rule_doc"
+      path: "ai_rules/00-core_redlines.md"
+      version: "1.0.0"
+    - id: "rules.ai.role_and_behavior"
+      kind: "rule_doc"
+      path: "ai_rules/01-role_and_behavior.md"
+      version: "1.0.0"
+    - id: "rules.ai.code_guidelines"
+      kind: "rule_doc"
+      path: "ai_rules/02-code_guidelines.md"
+      version: "1.0.0"
+    - id: "rules.ai.workflow_rules"
+      kind: "rule_doc"
+      path: "ai_rules/03-workflow_rules.md"
+      version: "1.0.0"
+    - id: "rules.ai.mobile_stack_example"
+      kind: "rule_doc"
+      path: "ai_rules/04-mobile_stack_example.md"
+      version: "1.0.0"
+    - id: "rules.ai.context_index_discovery"
+      kind: "rule_doc"
+      path: "ai_rules/05-context_index_discovery.md"
+      version: "1.0.0"
+    - id: "rules.engineering.branch_management"
+      kind: "rule_doc"
+      path: "specs/engineering/01-branch_management.md"
+      version: "1.0.0"
+    - id: "rules.engineering.commit_conventions"
+      kind: "rule_doc"
+      path: "specs/engineering/02-commit_conventions.md"
+      version: "1.0.0"
+    - id: "rules.engineering.code_review_and_dod"
+      kind: "rule_doc"
+      path: "specs/engineering/03-code_review_and_dod.md"
+      version: "1.0.0"
+    - id: "rules.engineering.ep_branch_mapping"
+      kind: "rule_doc"
+      path: "specs/engineering/04-ep_branch_mapping.md"
+      version: "1.0.0"
+  workflow:
+    - id: "workflow.ai_workflow"
+      kind: "workflow_doc"
+      path: "AI_WORKFLOW.md"
+      version: "1.0.0"
+    - id: "workflow.ai_workspace"
+      kind: "workflow_doc"
+      path: "AI_WORKSPACE.md"
+      version: "1.0.0"
+  templates:
+    - id: "template.adr"
+      kind: "template_doc"
+      path: "templates/ADR_TEMPLATE.md"
+      version: "1.0.0"
+    - id: "template.module_readme"
+      kind: "template_doc"
+      path: "templates/MODULE_README_TEMPLATE.md"
+      version: "1.0.0"
+    - id: "template.ep.context"
+      kind: "template_doc"
+      path: "templates/EP_TEMPLATE/context.md"
+      version: "1.0.0"
+    - id: "template.ep.evidence"
+      kind: "template_doc"
+      path: "templates/EP_TEMPLATE/evidence.md"
+      version: "1.0.0"
+    - id: "template.ep.steps"
+      kind: "template_doc"
+      path: "templates/EP_TEMPLATE/steps.md"
+      version: "1.0.0"
+  compose:
+    - id: "compose.recursive_index_default"
+      kind: "compose_policy"
+      version: "1.0.0"
+      mode: "recursive_index"
+      recursive_discovery: true
+      ancestry_order: "outer_to_inner"
+      compose_order:
+        - "workspace"
+        - "ancestor_scopes"
+        - "current_scope"
+        - "external_context"
+      precedence:
+        outer_scope: "提供默认约束"
+        nearest_sot: "提供业务真源"
+        nearest_scope: "提供最局部执行约束"
+
+current:
+  scope: workspace
+  id: __WORKSPACE_ID__
+  scope_version: "1.0.0"
+  compatibility:
+    protocol: "^2.0.0"
+    scopes:
+      workspace: "^1.0.0"
+      sot: "^1.0.0"
+      related_repo: "^1.0.0"
+      module: "^1.0.0"
+  refs:
+    workflow: ".ai/AI_WORKFLOW.md(4c2cbffbd43277c365ed635bb350ed832fe450b8)"
+    workspace: ".ai/AI_WORKSPACE.md"
+  description: >
+    __WORKSPACE_NAME__ 的真实 workspace instance；
+    `.ai` 承载 workspace 级 rules / workflow / templates，并通过递归 index 组合各子作用域。
+  resolver:
+    mode: "recursive_index"
+    recursive_discovery: true
+    hot_reload: true
+    ancestry_order: "outer_to_inner"
+  context:
+    rule_refs:
+      - "rules.ai.core_redlines"
+      - "rules.ai.role_and_behavior"
+      - "rules.ai.code_guidelines"
+      - "rules.ai.workflow_rules"
+      - "rules.ai.mobile_stack_example"
+      - "rules.ai.context_index_discovery"
+      - "rules.engineering.branch_management"
+      - "rules.engineering.commit_conventions"
+      - "rules.engineering.code_review_and_dod"
+      - "rules.engineering.ep_branch_mapping"
+    workflow_refs:
+      - "workflow.ai_workflow"
+      - "workflow.ai_workspace"
+    template_refs:
+      - "template.adr"
+      - "template.module_readme"
+      - "template.ep.context"
+      - "template.ep.evidence"
+      - "template.ep.steps"
+    prompt_refs: []
+    compose_ref: "compose.recursive_index_default"
+  external_context:
+    sot:
+      required: true
+      load: autoload_for_business_tasks
+      root: "repos/sot/"
+    module:
+      required: false
+      load: on_demand_for_localized_tasks
+    related_repo:
+      required: false
+      load: on_demand
+  notes:
+    - "本实例是 __WORKSPACE_NAME__ 的 workspace 级 manifest"
+    - "固定路径 `<scope-root>/.ai/AI_CONTEXT_INDEX.yaml` 同时承担入口发现与当前默认的递归组合"
+    - "dynamic resolver 保留为后续升级方向，当前不作为默认方案"
+    - "SoT 与其他子仓库通过 `repos/` 挂载，并各自维护独立 git"

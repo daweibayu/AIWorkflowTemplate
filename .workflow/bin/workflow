@@ -1,0 +1,358 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "fileutils"
+require "optparse"
+require "pathname"
+require "yaml"
+
+class TemplateRenderer
+  attr_reader :manifest_path_root
+
+  def initialize(template_root)
+    @manifest_path_root = Pathname(template_root).expand_path
+  end
+
+  def manifest
+    @manifest ||= YAML.load_file(@manifest_path_root.join(".workflow/manifest.yaml"))
+  end
+
+  def render_tree(root, replacements)
+    Dir.glob("**/*", File::FNM_DOTMATCH, base: root.to_s).each do |relative|
+      next if relative == "." || relative == ".."
+
+      path = root.join(relative)
+      next unless path.file?
+
+      begin
+        content = path.read
+      rescue ArgumentError
+        next
+      end
+
+      rendered = replacements.reduce(content) { |memo, (from, to)| memo.gsub(from, to) }
+      path.write(rendered) if rendered != content
+    end
+  end
+
+  def copy_directory_contents(source, target)
+    FileUtils.mkdir_p(target)
+    Dir.children(source).each do |entry|
+      FileUtils.cp_r(source.join(entry), target.join(entry))
+    end
+  end
+
+  def init_git_repo(path)
+    return if path.join(".git").exist?
+
+    system("git", "init", "-b", "main", path.to_s, exception: false)
+  end
+end
+
+class WorkspaceStore
+  def initialize(workspace_root)
+    @workspace_root = Pathname(workspace_root).expand_path
+  end
+
+  def workspace_yaml_path
+    @workspace_root.join("workspace.yaml")
+  end
+
+  def load!
+    raise "workspace.yaml not found under #{@workspace_root}" unless workspace_yaml_path.exist?
+
+    YAML.load_file(workspace_yaml_path)
+  end
+
+  def save!(data)
+    workspace_yaml_path.write(data.to_yaml)
+  end
+
+  def repo_entries
+    load!.fetch("repos", {})
+  end
+
+  def repo_git_url(meta)
+    return meta.dig("git", "url") if meta["git"].is_a?(Hash)
+    meta["remote"]
+  end
+end
+
+class InitCommand
+  def initialize(template_root:, argv:)
+    @renderer = TemplateRenderer.new(template_root)
+    @argv = argv
+    @options = {
+      mode: "copy",
+      force: false,
+      name: nil
+    }
+  end
+
+  def run
+    parse!
+
+    target = Pathname(@argv.fetch(0)).expand_path
+    workspace_name = @options[:name] || target.basename.to_s
+    workspace_id = workspace_name.gsub(/[^a-zA-Z0-9_-]+/, "-")
+
+    ensure_target!(target)
+
+    case @options[:mode]
+    when "copy"
+      materialize_copy_mode(target, workspace_name, workspace_id)
+    when "linked"
+      materialize_linked_mode(target, workspace_name, workspace_id)
+    else
+      raise "Unsupported mode: #{@options[:mode]}"
+    end
+
+    @renderer.init_git_repo(target)
+    puts "Initialized workspace at #{target}"
+  end
+
+  private
+
+  def parse!
+    OptionParser.new do |opts|
+      opts.banner = "Usage: .workflow/bin/workflow init TARGET [--name NAME] [--mode copy|linked] [--force]"
+      opts.on("--name NAME", "Workspace name") { |value| @options[:name] = value }
+      opts.on("--mode MODE", "Init mode: copy or linked") { |value| @options[:mode] = value }
+      opts.on("--force", "Allow non-empty target directory") { @options[:force] = true }
+    end.parse!(@argv)
+
+    raise "TARGET is required" if @argv.empty?
+  end
+
+  def ensure_target!(target)
+    if target.exist? && target.children.any? && !@options[:force]
+      raise "Target #{target} is not empty. Use --force to continue."
+    end
+
+    FileUtils.mkdir_p(target)
+  end
+
+  def materialize_linked_mode(target, workspace_name, workspace_id)
+    workflow_link = target.join(".workflow")
+    FileUtils.ln_sf(@renderer.manifest_path_root.join(".workflow"), workflow_link)
+    workspace_src = @renderer.manifest.fetch("workspace").fetch("scaffold")
+    @renderer.copy_directory_contents(@renderer.manifest_path_root.join(workspace_src), target)
+    finalize_materialization(target, workspace_name, workspace_id)
+  end
+
+  def materialize_copy_mode(target, workspace_name, workspace_id)
+    workspace_src = @renderer.manifest.fetch("workspace").fetch("scaffold")
+    @renderer.copy_directory_contents(@renderer.manifest_path_root.join(workspace_src), target)
+    finalize_materialization(target, workspace_name, workspace_id)
+  end
+
+  def finalize_materialization(target, workspace_name, workspace_id)
+    replacements = {
+      "__WORKSPACE_NAME__" => workspace_name,
+      "__WORKSPACE_ID__" => workspace_id
+    }
+
+    write_workspace_files(target, workspace_name)
+    materialize_repo_scaffolds(target, workspace_name, workspace_id)
+    @renderer.render_tree(target, replacements)
+  end
+
+  def write_workspace_files(target, workspace_name)
+    workspace_yaml = {
+      "name" => workspace_name,
+      "repos" => {},
+      "scripts" => {
+        "bootstrap" => "scripts/bootstrap.sh",
+        "check" => "scripts/check.sh"
+      }
+    }
+
+    @renderer.manifest.fetch("repos").each do |name, meta|
+      entry = {
+        "path" => meta.fetch("path"),
+        "ref" => "main"
+      }
+      entry["git"] = { "url" => meta.dig("git", "url") } if meta.dig("git", "url")
+      workspace_yaml["repos"][name] = entry
+    end
+
+    workspace_lock = { "repos" => {} }
+    template_yaml = {
+      "template" => {
+        "source" => @renderer.manifest_path_root.to_s,
+        "name" => @renderer.manifest.dig("template", "name"),
+        "version" => @renderer.manifest.dig("template", "version")
+      }
+    }
+
+    target.join("workspace.yaml").write(workspace_yaml.to_yaml)
+    target.join("workspace.lock.yaml").write(workspace_lock.to_yaml)
+    target.join("workspace.template.yaml").write(template_yaml.to_yaml)
+  end
+
+  def materialize_repo_scaffolds(target, workspace_name, workspace_id)
+    @renderer.manifest.fetch("repos").each do |_name, meta|
+      next unless meta["init"] == "scaffold"
+
+      repo_target = target.join(meta.fetch("path"))
+      @renderer.copy_directory_contents(@renderer.manifest_path_root.join(meta.fetch("scaffold")), repo_target)
+      @renderer.render_tree(repo_target, {
+        "__WORKSPACE_NAME__" => workspace_name,
+        "__WORKSPACE_ID__" => workspace_id
+      })
+      @renderer.init_git_repo(repo_target) if meta["git_init"]
+    end
+  end
+end
+
+class RepoCommand
+  def initialize(argv:)
+    @argv = argv
+  end
+
+  def run
+    subcommand = @argv.shift
+    case subcommand
+    when "add"
+      RepoAddCommand.new(@argv).run
+    when "sync"
+      RepoSyncCommand.new(@argv).run
+    else
+      raise "Unknown repo subcommand: #{subcommand || '(none)'}"
+    end
+  end
+end
+
+class RepoAddCommand
+  def initialize(argv)
+    @argv = argv
+    @options = {
+      workspace: Dir.pwd,
+      path: nil,
+      ref: "main",
+      git_url: nil,
+      clone: true
+    }
+  end
+
+  def run
+    parse!
+    name = @argv.fetch(0)
+    path = @options[:path] || "repos/#{name}"
+
+    store = WorkspaceStore.new(@options[:workspace])
+    workspace = store.load!
+    workspace["repos"] ||= {}
+    workspace["repos"][name] = {
+      "path" => path,
+      "ref" => @options[:ref],
+      "git" => { "url" => @options[:git_url] }
+    }
+    store.save!(workspace)
+
+    clone_repo(store, name) if @options[:clone]
+    puts "Added repo #{name} to #{store.workspace_yaml_path}"
+  end
+
+  private
+
+  def parse!
+    OptionParser.new do |opts|
+      opts.banner = "Usage: .workflow/bin/workflow repo add NAME --git-url URL [--path PATH] [--ref REF] [--workspace PATH] [--no-clone]"
+      opts.on("--git-url URL", "Git URL") { |value| @options[:git_url] = value }
+      opts.on("--path PATH", "Workspace-local repo path") { |value| @options[:path] = value }
+      opts.on("--ref REF", "Default ref") { |value| @options[:ref] = value }
+      opts.on("--workspace PATH", "Workspace root") { |value| @options[:workspace] = value }
+      opts.on("--no-clone", "Do not clone after writing workspace.yaml") { @options[:clone] = false }
+    end.parse!(@argv)
+
+    raise "NAME is required" if @argv.empty?
+    raise "--git-url is required" unless @options[:git_url]
+  end
+
+  def clone_repo(store, name)
+    meta = store.repo_entries.fetch(name)
+    path = Pathname(@options[:workspace]).join(meta.fetch("path"))
+    return if path.exist?
+
+    FileUtils.mkdir_p(path.dirname)
+    system("git", "clone", store.repo_git_url(meta), path.to_s, exception: false)
+  end
+end
+
+class RepoSyncCommand
+  def initialize(argv)
+    @argv = argv
+    @options = {
+      workspace: Dir.pwd,
+      all: false
+    }
+  end
+
+  def run
+    parse!
+    store = WorkspaceStore.new(@options[:workspace])
+    repos = store.repo_entries
+
+    selected = if @options[:all]
+                 repos.keys
+               else
+                 [@argv.fetch(0)]
+               end
+
+    selected.each do |name|
+      sync_repo(store, name, repos.fetch(name))
+    end
+  end
+
+  private
+
+  def parse!
+    OptionParser.new do |opts|
+      opts.banner = "Usage: .workflow/bin/workflow repo sync NAME [--workspace PATH] | .workflow/bin/workflow repo sync --all [--workspace PATH]"
+      opts.on("--workspace PATH", "Workspace root") { |value| @options[:workspace] = value }
+      opts.on("--all", "Sync all repos declared in workspace.yaml") { @options[:all] = true }
+    end.parse!(@argv)
+
+    return if @options[:all]
+
+    raise "NAME is required unless --all is used" if @argv.empty?
+  end
+
+  def sync_repo(store, name, meta)
+    path = Pathname(@options[:workspace]).join(meta.fetch("path"))
+    git_url = store.repo_git_url(meta)
+
+    if path.exist?
+      system("git", "-C", path.to_s, "fetch", "--all", "--prune", exception: false)
+    elsif git_url
+      FileUtils.mkdir_p(path.dirname)
+      system("git", "clone", git_url, path.to_s, exception: false)
+    else
+      warn "Skip #{name}: no local checkout and no git url"
+    end
+  end
+end
+
+def usage!
+  warn <<~USAGE
+    Usage:
+      .workflow/bin/workflow init TARGET [options]
+      .workflow/bin/workflow repo add NAME [options]
+      .workflow/bin/workflow repo sync NAME [options]
+      .workflow/bin/workflow repo sync --all [options]
+  USAGE
+  exit 1
+end
+
+command = ARGV.shift
+usage! unless command
+
+case command
+when "init"
+  InitCommand.new(template_root: File.expand_path("../..", __dir__), argv: ARGV).run
+when "repo"
+  RepoCommand.new(argv: ARGV).run
+else
+  usage!
+end

@@ -1,0 +1,15 @@
+template:
+  name: ai-workflow-template
+  version: "0.1.0"
+  init_entry: .workflow/bin/workflow
+
+workspace:
+  scaffold: .workflow/scaffold/workspace
+  default_name: project-workspace
+
+repos:
+  sot:
+    path: repos/sot
+    init: scaffold
+    scaffold: .workflow/scaffold/repos/sot
+    git_init: true
